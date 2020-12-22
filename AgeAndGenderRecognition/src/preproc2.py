@@ -63,9 +63,9 @@ def _convert_to_example(filename, image_buffer, label, height, width):
     Returns:
     Example proto
     """
-
     example = tf.train.Example(features=tf.train.Features(feature={
-        'image/class/label': _int64_feature(label),
+        'image/class/labelAge': _int64_feature(label[0]),
+        'image/class/labelGender': _int64_feature(label[1]),
         'image/filename': _bytes_feature(str.encode(os.path.basename(filename))),
         'image/encoded': _bytes_feature(image_buffer),
         'image/height': _int64_feature(height),
@@ -172,7 +172,8 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
         files_in_shard = np.arange(shard_ranges[s], shard_ranges[s + 1], dtype=int)
         for i in files_in_shard:
             filename = filenames[i]
-            label = int(labels[i])
+
+            label = [int(labels[i][0]), int(labels[i][1])]
 
             image_buffer, height, width = _process_image(filename, coder)
             
@@ -237,10 +238,13 @@ def _process_image_files(name, filenames, labels, num_shards):
 
 def _find_image_files(list_file, data_dir):
     print('Determining list of input files and labels from %s.' % list_file)
+
     files_labels = [l.strip().split(' ') for l in tf.gfile.FastGFile(
         list_file, 'r').readlines()]
 
     labels = []
+    labels1 = []
+    labels2 = []
     filenames = []
 
     # Leave label index 0 empty as a background class.
@@ -248,13 +252,19 @@ def _find_image_files(list_file, data_dir):
     
     # Construct the list of JPEG files and labels.
 
-    for path, label in files_labels:
+    for path, label1, label2 in files_labels:
         jpeg_file_path = '%s/%s' % (data_dir, path)
         if os.path.exists(jpeg_file_path):
             filenames.append(jpeg_file_path)
-            labels.append(label)
+            labels1.append(label1)
+            labels2.append(label2)
+            labels.append([label1, label2])
 
-    unique_labels = set(labels)
+
+
+    unique_labels1 = set(labels1)
+    unique_labels2 = set(labels2)
+    unique_labels = [unique_labels1, unique_labels2]
     # Shuffle the ordering of all image files in order to guarantee
     # random ordering of the images with respect to label in the
     # saved TFRecord files. Make the randomization repeatable.
@@ -267,7 +277,7 @@ def _find_image_files(list_file, data_dir):
     
     print('Found %d JPEG files across %d labels inside %s.' %
           (len(filenames), len(unique_labels), data_dir))
-    return filenames, labels
+    return filenames, labels, unique_labels
 
 
 def _process_dataset(name, filename, directory, num_shards):
@@ -278,9 +288,8 @@ def _process_dataset(name, filename, directory, num_shards):
     num_shards: integer number of shards for this data set.
     labels_file: string, path to the labels file.
     """
-    filenames, labels = _find_image_files(filename, directory)
+    filenames, labels, unique_labels = _find_image_files(filename, directory)
     _process_image_files(name, filenames, labels, num_shards)
-    unique_labels = set(labels)
     return len(labels), unique_labels
 
 def main(unused_argv):
@@ -301,8 +310,9 @@ def main(unused_argv):
     train, train_outcomes = _process_dataset('train', '%s/%s' % (FLAGS.fold_dir, FLAGS.train_list), FLAGS.data_dir,
                      FLAGS.train_shards)
 
-    if len(valid_outcomes) != len(valid_outcomes | train_outcomes):
+    if (len(valid_outcomes[0]) != len(valid_outcomes[0] | train_outcomes[0])) or (len(valid_outcomes[1]) != len(valid_outcomes[1] | train_outcomes[1])):
         print('Warning: unattested labels in training data [%s]' % (', '.join((valid_outcomes | train_outcomes) - valid_outcomes)))
+
         
     output_file = os.path.join(FLAGS.output_dir, 'md.json')
 
@@ -312,7 +322,8 @@ def main(unused_argv):
            'valid_counts': valid,
            'train_counts': train,
            'timestamp': str(datetime.now()),
-           'nlabels': len(train_outcomes) }
+           'nlabels1': len(train_outcomes[0]),
+           'nlabels2': len(train_outcomes[1])  }
     with open(output_file, 'w') as f:
         json.dump(md, f)
 

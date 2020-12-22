@@ -8,7 +8,7 @@ import time
 import os
 import numpy as np
 import tensorflow as tf
-from data import distorted_inputs
+from data2 import distorted_inputs
 from model import select_model
 import json
 import re
@@ -88,10 +88,13 @@ def optimizer(optim, eta, loss_fn, at_step, decay_rate):
     return tf.contrib.layers.optimize_loss(loss_fn, global_step, eta, optz, clip_gradients=4., learning_rate_decay_fn=lr_decay_fn)
 
 def loss(logits, labels):
-    labels = tf.cast(labels, tf.int32)
-    print(labels)
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=labels, name='cross_entropy_per_example')
+
+    cross_entropy_age = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=logits[0], labels=labels[0], name='cross_entropy_per_example')
+    cross_entropy_gender = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=logits[1], labels=labels[1], name='cross_entropy_per_example')
+    cross_entropy = tf.add(cross_entropy_age, cross_entropy_gender)
+
     cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
     tf.add_to_collection('losses', cross_entropy_mean)
     losses = tf.get_collection('losses')
@@ -111,7 +114,7 @@ def loss(logits, labels):
 def main(argv=None):
     with tf.Graph().as_default():
 
-        model_fn = select_model(FLAGS.model_type)
+        model_fn = select_model('common')
         # Open the metadata file and figure out nlabels, and size of epoch
         input_file = os.path.join(FLAGS.train_dir, 'md.json')
         print(input_file)
@@ -119,7 +122,7 @@ def main(argv=None):
             md = json.load(f)
 
         images, labels, _ = distorted_inputs(FLAGS.train_dir, FLAGS.batch_size, FLAGS.image_size, FLAGS.num_preprocess_threads)
-        logits = model_fn(md['nlabels'], images, 1-FLAGS.pdrop, True)
+        logits = model_fn([md['nlabels1'], md['nlabels2']], images, 1-FLAGS.pdrop, True)
         total_loss = loss(logits, labels)
 
         train_op = optimizer(FLAGS.optim, FLAGS.eta, total_loss, FLAGS.steps_per_decay, FLAGS.eta_decay_rate)
