@@ -112,23 +112,34 @@ def eval_once(saver, summary_writer, summary_op, logits, labels, num_eval, reque
                                                  start=True))
             num_steps = int(math.ceil(num_eval / FLAGS.batch_size))
             true_count1Age = true_count2Age = 0
-            true_count1Gender = true_count2Gender = 0
+            tp = 0
+            tn = 0
+            fp = 0
+            fn = 0
             total_sample_count = num_steps * FLAGS.batch_size
             step = 0
             print(FLAGS.batch_size, num_steps)
 
             while step < num_steps and not coord.should_stop():
                 start_time = time.time()
-                v, predictions1Age, predictions2Age = sess.run([logits[0], top1Age, top2Age])
-                v, predictions1Gender, predictions2Gender = sess.run([logits[1], top1Gender, top2Gender])
+                v, predictions1Age, predictions2Age, lAge = sess.run([logits[0], top1Age, top2Age, labels[0]])
+                v, predictions1Gender, predictions2Gender, lGender = sess.run([logits[1], top1Gender, top2Gender, labels[1]])
                 duration = time.time() - start_time
                 sec_per_batch = float(duration)
                 examples_per_sec = FLAGS.batch_size / sec_per_batch
 
                 true_count1Age += np.sum(predictions1Age)
                 true_count2Age += np.sum(predictions2Age)
-                true_count1Gender += np.sum(predictions1Gender)
-                true_count2Gender += np.sum(predictions2Gender)
+                for i in range(len(v)):
+                    if ((v[i, 0] > v[i, 1]) and (lGender[i] == 0)):
+                        tn += 1
+                    elif ((v[i, 0] <= v[i, 1]) and (lGender[i] == 0)):
+                        fp += 1
+                    elif ((v[i, 0] <= v[i, 1]) and (lGender[i] == 1)):
+                        tp += 1
+                    else:
+                        fn += 1
+
                 format_str = ('%s (%.1f examples/sec; %.3f sec/batch)')
                 print(format_str % (datetime.now(),
                                     examples_per_sec, sec_per_batch))
@@ -139,12 +150,14 @@ def eval_once(saver, summary_writer, summary_op, logits, labels, num_eval, reque
 
             at1Age = true_count1Age / total_sample_count
             at2Age = true_count2Age / total_sample_count
-            at1Gender = true_count1Gender / total_sample_count
-            at2Gender = true_count2Gender / total_sample_count
-            print('%s:    precisionAge @ 1 = %.3f (%d/%d)' % (datetime.now(), at1Age, true_count1Age, total_sample_count))
-            print('%s:       recallAge @ 2 = %.3f (%d/%d)' % (datetime.now(), at2Age, true_count2Age, total_sample_count))
-            print('%s: precisionGender @ 1 = %.3f (%d/%d)' % (datetime.now(), at1Gender, true_count1Gender, total_sample_count))
-            print('%s:    recallGender @ 2 = %.3f (%d/%d)' % (datetime.now(), at2Gender, true_count2Gender, total_sample_count))
+            precision = tp / (tp + fp)
+            recall = tp / (tp + fn)
+            accuracy = (tp + tn) / total_sample_count
+            print('%s:  Age @ 1             = %.3f (%d/%d)' % (datetime.now(), at1Age, true_count1Age, total_sample_count))
+            print('%s:  Age @ 2             = %.3f (%d/%d)' % (datetime.now(), at2Age, true_count2Age, total_sample_count))
+            print('%s:  Gender @ Precision  = %.3f (%d/%d+%d)' % (datetime.now(), precision, tp, tp, fp))
+            print('%s:  Gender @ Recall     = %.3f (%d/%d+%d)' % (datetime.now(), recall, tp, tp, fn))
+            print('%s:  Gender @ Accuracy   = %.3f (%d+%d/%d)' % (datetime.now(), accuracy, tp, tn, total_sample_count))
 
             summary = tf.Summary()
             summary.ParseFromString(sess.run(summary_op))

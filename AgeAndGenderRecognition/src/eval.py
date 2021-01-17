@@ -109,19 +109,35 @@ def eval_once(saver, summary_writer, summary_op, logits, labels, num_eval, reque
                                                  start=True))
             num_steps = int(math.ceil(num_eval / FLAGS.batch_size))
             true_count1 = true_count2 = 0
+            tp = 0
+            tn = 0
+            fp = 0
+            fn = 0
+
             total_sample_count = num_steps * FLAGS.batch_size
             step = 0
             print(FLAGS.batch_size, num_steps)
 
             while step < num_steps and not coord.should_stop():
                 start_time = time.time()
-                v, predictions1, predictions2 = sess.run([logits, top1, top2])
+                v, predictions1, predictions2, l = sess.run([logits, top1, top2, labels])
                 duration = time.time() - start_time
                 sec_per_batch = float(duration)
                 examples_per_sec = FLAGS.batch_size / sec_per_batch
 
-                true_count1 += np.sum(predictions1)
-                true_count2 += np.sum(predictions2)
+                if(len(v[0])==2):
+                    for i in range(len(v)):
+                        if ((v[i, 0] > v[i,1]) and (l[i]==0)):
+                            tn += 1
+                        elif ((v[i, 0] <= v[i,1]) and (l[i]==0)):
+                            fp += 1
+                        elif ((v[i, 0] <= v[i,1]) and (l[i]==1)):
+                            tp += 1
+                        else:
+                            fn += 1
+                else:
+                    true_count1 += np.sum(predictions1)
+                    true_count2 += np.sum(predictions2)
                 format_str = ('%s (%.1f examples/sec; %.3f sec/batch)')
                 print(format_str % (datetime.now(),
                                     examples_per_sec, sec_per_batch))
@@ -130,15 +146,21 @@ def eval_once(saver, summary_writer, summary_op, logits, labels, num_eval, reque
 
             # Compute precision @ 1.
 
-            at1 = true_count1 / total_sample_count
-            at2 = true_count2 / total_sample_count
-            print('%s: precision @ 1 = %.3f (%d/%d)' % (datetime.now(), at1, true_count1, total_sample_count))
-            print('%s:    recall @ 2 = %.3f (%d/%d)' % (datetime.now(), at2, true_count2, total_sample_count))
+            if ((tp!=0) or (tn!=0) or (fp!=0) or (fn!=0)):
+                precision = tp/(tp+fp)
+                recall = tp/(tp+fn)
+                accuracy = (tp+tn)/total_sample_count
+                print('%s:  @ Precision  = %.3f (%d/%d+%d)' % (datetime.now(), precision, tp, tp, fp))
+                print('%s:  @ Recall     = %.3f (%d/%d+%d)' % (datetime.now(), recall, tp, tp, fn))
+                print('%s:  @ Accuracy   = %.3f (%d+%d/%d)' % (datetime.now(), accuracy, tp, tn, total_sample_count))
+            else:
+                at1 = true_count1 / total_sample_count
+                at2 = true_count2 / total_sample_count
+                print('%s:  @ 1 = %.3f (%d/%d)' % (datetime.now(), at1, true_count1, total_sample_count))
+                print('%s:  @ 2 = %.3f (%d/%d)' % (datetime.now(), at2, true_count2, total_sample_count))
 
             summary = tf.Summary()
             summary.ParseFromString(sess.run(summary_op))
-            summary.value.add(tag='Precision @ 1', simple_value=at1)
-            summary.value.add(tag='   Recall @ 2', simple_value=at2)
             summary_writer.add_summary(summary, global_step)
         except Exception as e:  # pylint: disable=broad-except
             coord.request_stop(e)
