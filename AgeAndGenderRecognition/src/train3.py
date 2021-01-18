@@ -8,7 +8,7 @@ import time
 import os
 import numpy as np
 import tensorflow as tf
-from data import distorted_inputs
+from data3 import distorted_inputs
 from model import select_model
 import json
 import re
@@ -88,10 +88,12 @@ def optimizer(optim, eta, loss_fn, at_step, decay_rate):
     return tf.contrib.layers.optimize_loss(loss_fn, global_step, eta, optz, clip_gradients=4., learning_rate_decay_fn=lr_decay_fn)
 
 def loss(logits, labels):
-    labels = tf.cast(labels, tf.int32)
-    print(labels)
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=labels, name='cross_entropy_per_example')
+    labels = tf.cast(labels, tf.float32)
+
+    #cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    #    logits=logits, labels=labels, name='cross_entropy_per_example')
+    cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels)
+
     cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
     tf.add_to_collection('losses', cross_entropy_mean)
     losses = tf.get_collection('losses')
