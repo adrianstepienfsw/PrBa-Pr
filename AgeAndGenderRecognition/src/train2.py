@@ -93,7 +93,7 @@ def loss(logits, labels):
         logits=logits[0], labels=labels[0], name='cross_entropy_per_example')
     cross_entropy_gender = tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=logits[1], labels=labels[1], name='cross_entropy_per_example')
-    cross_entropy = tf.add(cross_entropy_age, cross_entropy_gender)
+    cross_entropy = tf.add(tf.mul(cross_entropy_age, 5/8), tf.mul(cross_entropy_gender, 5/2))
 
     cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
     tf.add_to_collection('losses', cross_entropy_mean)
